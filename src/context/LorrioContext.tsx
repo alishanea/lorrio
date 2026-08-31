@@ -11,6 +11,8 @@ import {
   OrderStatus,
   MaterialCategory,
   QualityGrade,
+  NotificationItem,
+  LocationCoords,
 } from '../types/lorrio';
 import {
   INITIAL_LOADS,
@@ -18,24 +20,32 @@ import {
   INITIAL_DRIVER_PROFILE,
   INITIAL_SUPPLIER_PROFILE,
   INITIAL_RETURN_LOADS,
+  INITIAL_NOTIFICATIONS,
 } from '../lib/mockData';
 
 interface LorrioContextType {
   role: UserRole;
   setRole: (role: UserRole) => void;
+  activeMobileTab: string;
+  setActiveMobileTab: (tab: string) => void;
   loads: LoadListing[];
   orders: Order[];
+  notifications: NotificationItem[];
   driverProfile: DriverProfile;
   supplierProfile: SupplierProfile;
   returnLoads: ReturnLoad[];
+  activeOrder?: Order;
+  unreadNotifCount: number;
   bookLoad: (
     loadId: string,
     customerName: string,
     customerPhone: string,
     deliveryAddress: string,
-    deliveryLocation: string
+    deliveryLocation: string,
+    deliveryCoords?: LocationCoords
   ) => Order;
   updateOrderStatus: (orderId: string, status: OrderStatus) => void;
+  updateDriverEta: (orderId: string, etaText: string) => void;
   createLoadListing: (data: {
     material: MaterialCategory;
     quality: QualityGrade;
@@ -54,27 +64,32 @@ interface LorrioContextType {
     orderId: string,
     ratings: { customerRating?: number; driverRating?: number; materialRating?: number; feedback?: string }
   ) => void;
-  activeOrder?: Order;
+  markNotificationRead: (id: string) => void;
+  generateWhatsAppUrl: (order: Order) => string;
 }
 
 const LorrioContext = createContext<LorrioContextType | undefined>(undefined);
 
 export const LorrioProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [role, setRole] = useState<UserRole>('CUSTOMER');
+  const [role, setRole] = useState<UserRole>('LANDING');
+  const [activeMobileTab, setActiveMobileTab] = useState<string>('home');
   const [loads, setLoads] = useState<LoadListing[]>(INITIAL_LOADS);
   const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS);
+  const [notifications, setNotifications] = useState<NotificationItem[]>(INITIAL_NOTIFICATIONS);
   const [driverProfile, setDriverProfile] = useState<DriverProfile>(INITIAL_DRIVER_PROFILE);
   const [supplierProfile, setSupplierProfile] = useState<SupplierProfile>(INITIAL_SUPPLIER_PROFILE);
   const [returnLoads, setReturnLoads] = useState<ReturnLoad[]>(INITIAL_RETURN_LOADS);
 
   const activeOrder = orders.find((o) => o.status !== 'DELIVERED') || orders[0];
+  const unreadNotifCount = notifications.filter((n) => !n.read).length;
 
   const bookLoad = (
     loadId: string,
     customerName: string,
     customerPhone: string,
     deliveryAddress: string,
-    deliveryLocation: string
+    deliveryLocation: string,
+    deliveryCoords?: LocationCoords
   ): Order => {
     const targetLoad = loads.find((l) => l.id === loadId);
     const orderId = `LR${Math.floor(1000 + Math.random() * 9000)}`;
@@ -85,11 +100,13 @@ export const LorrioProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       customerName,
       customerPhone,
       deliveryAddress,
+      pickupCoords: targetLoad?.pickupCoords || { address: 'Mayyil Quarry, Kannur', lat: 11.9744, lng: 75.4851 },
+      deliveryCoords: deliveryCoords || { address: deliveryAddress, lat: 11.6094, lng: 76.0827 },
       material: targetLoad?.material || 'Laterite Stone',
       quality: targetLoad?.quality || 'Premium Cut Finish (High Strength)',
       quantity: targetLoad?.quantity || 500,
       unit: targetLoad?.unit || 'stones',
-      pickupLocation: targetLoad?.pickupLocation || 'Mayyil, Kannur',
+      pickupLocation: targetLoad?.pickupLocation || 'Mayyil Quarry, Kannur',
       deliveryLocation: deliveryLocation || targetLoad?.destinationLocation || 'Kalpetta, Wayanad',
       materialPrice: targetLoad?.materialPrice || 16500,
       transportPrice: targetLoad?.transportPrice || 6500,
@@ -101,11 +118,25 @@ export const LorrioProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       driverPhone: targetLoad?.driverPhone || driverProfile.phone,
       vehicleNumber: targetLoad?.vehicleNumber || driverProfile.vehicleNumber,
       status: 'BOOKED',
-      createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ', Today',
-      deliveryDate: 'Tomorrow Morning',
+      driverEtaText: '1 hr 45 mins (ETA 04:30 PM)',
+      liveDriverLocation: { lat: 11.8200, lng: 75.6100, speedKm: 45 },
+      createdAt: 'Just Now',
+      deliveryDate: 'Today Afternoon',
     };
 
     setOrders((prev) => [newOrder, ...prev]);
+
+    // Push notification
+    const newNotif: NotificationItem = {
+      id: `NOTIF-${Date.now()}`,
+      title: `🎉 Order #${orderId} Confirmed`,
+      message: `Your booking for ${newOrder.quantity} ${newOrder.unit} of ${newOrder.material} has been confirmed. Driver ${newOrder.driverName} assigned!`,
+      timestamp: 'Just now',
+      read: false,
+      type: 'ORDER',
+      forRole: 'CUSTOMER',
+    };
+    setNotifications((prev) => [newNotif, ...prev]);
 
     setLoads((prev) =>
       prev.map((l) => (l.id === loadId ? { ...l, status: 'BOOKED' } : l))
@@ -118,6 +149,34 @@ export const LorrioProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setOrders((prev) =>
       prev.map((o) => (o.id === orderId ? { ...o, status } : o))
     );
+
+    const notif: NotificationItem = {
+      id: `NOTIF-${Date.now()}`,
+      title: `📦 Order #${orderId} Status Updated`,
+      message: `Status changed to: ${status}. Driver is en route via Kannur-Wayanad ghat pass.`,
+      timestamp: 'Just now',
+      read: false,
+      type: 'ORDER',
+      forRole: 'CUSTOMER',
+    };
+    setNotifications((prev) => [notif, ...prev]);
+  };
+
+  const updateDriverEta = (orderId: string, etaText: string) => {
+    setOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? { ...o, driverEtaText: etaText } : o))
+    );
+
+    const notif: NotificationItem = {
+      id: `NOTIF-ETA-${Date.now()}`,
+      title: `⏱️ Driver Updated Delivery ETA`,
+      message: `Order #${orderId} new ETA: ${etaText}`,
+      timestamp: 'Just now',
+      read: false,
+      type: 'DRIVER',
+      forRole: 'CUSTOMER',
+    };
+    setNotifications((prev) => [notif, ...prev]);
   };
 
   const createLoadListing = (data: {
@@ -145,7 +204,9 @@ export const LorrioProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       quantity: data.quantity,
       unit: data.unit,
       pickupLocation: data.pickupLocation,
+      pickupCoords: { address: data.pickupLocation, lat: 11.9744, lng: 75.4851 },
       destinationLocation: data.destinationLocation,
+      destinationCoords: { address: data.destinationLocation, lat: 11.6094, lng: 76.0827 },
       materialPrice: data.materialPrice,
       transportPrice: data.transportPrice,
       platformFee,
@@ -202,23 +263,51 @@ export const LorrioProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     );
   };
 
+  const markNotificationRead = (id: string) => {
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, read: true } : n))
+    );
+  };
+
+  const generateWhatsAppUrl = (order: Order): string => {
+    const text = encodeURIComponent(
+      `🪨 *LORRIO ORDER CONFIRMATION #${order.id}*\n\n` +
+      `📦 *Material:* ${order.quantity} ${order.unit} - ${order.material}\n` +
+      `📍 *Pickup Quarry:* ${order.pickupLocation}\n` +
+      `📍 *Delivery Site:* ${order.deliveryAddress}\n` +
+      `🚛 *Lorry Driver:* ${order.driverName || 'Assigned Driver'} (${order.vehicleNumber || '10-Wheel Lorry'})\n` +
+      `📞 *Driver Phone:* ${order.driverPhone || '+91 94473 88102'}\n` +
+      `⏱️ *Delivery ETA:* ${order.driverEtaText || '1 hr 45 mins'}\n` +
+      `💰 *Total Amount:* ₹${order.totalPrice.toLocaleString()}\n\n` +
+      `🗺️ *Live Order Tracking:* https://lorrio.netlify.app/`
+    );
+    return `https://wa.me/?text=${text}`;
+  };
+
   return (
     <LorrioContext.Provider
       value={{
         role,
         setRole,
+        activeMobileTab,
+        setActiveMobileTab,
         loads,
         orders,
+        notifications,
         driverProfile,
         supplierProfile,
         returnLoads,
+        activeOrder,
+        unreadNotifCount,
         bookLoad,
         updateOrderStatus,
+        updateDriverEta,
         createLoadListing,
         toggleDriverOnline,
         acceptReturnLoad,
         rateOrder,
-        activeOrder,
+        markNotificationRead,
+        generateWhatsAppUrl,
       }}
     >
       {children}

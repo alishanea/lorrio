@@ -1,4 +1,4 @@
-export type UserRole = 'CUSTOMER' | 'DRIVER' | 'SUPPLIER' | 'ADMIN';
+export type UserRole = 'LANDING' | 'CUSTOMER' | 'DRIVER' | 'SUPPLIER' | 'ADMIN';
 
 export type MaterialCategory =
   | 'Laterite Stone'
@@ -19,6 +19,22 @@ export type OrderStatus =
   | 'IN_TRANSIT'
   | 'DELIVERED';
 
+export interface LocationCoords {
+  address: string;
+  lat: number;
+  lng: number;
+}
+
+export interface NotificationItem {
+  id: string;
+  title: string;
+  message: string;
+  timestamp: string;
+  read: boolean;
+  type: 'ORDER' | 'DRIVER' | 'SYSTEM';
+  forRole: 'CUSTOMER' | 'DRIVER' | 'SUPPLIER' | 'ALL';
+}
+
 export interface LoadListing {
   id: string;
   supplierId: string;
@@ -28,13 +44,15 @@ export interface LoadListing {
   isVerifiedSupplier: boolean;
   material: MaterialCategory;
   quality: QualityGrade;
-  quantity: number; // e.g. 500
-  unit: string; // e.g. "stones"
-  pickupLocation: string; // Kannur
-  destinationLocation: string; // Wayanad
-  materialPrice: number; // ₹ INR
-  transportPrice: number; // ₹ INR
-  platformFee: number; // ₹ INR
+  quantity: number;
+  unit: string;
+  pickupLocation: string;
+  pickupCoords: LocationCoords;
+  destinationLocation: string;
+  destinationCoords: LocationCoords;
+  materialPrice: number;
+  transportPrice: number;
+  platformFee: number;
   totalPrice: number;
   vehicleType: string;
   availableDate: string;
@@ -53,6 +71,8 @@ export interface Order {
   customerName: string;
   customerPhone: string;
   deliveryAddress: string;
+  pickupCoords: LocationCoords;
+  deliveryCoords: LocationCoords;
   material: MaterialCategory;
   quality: QualityGrade;
   quantity: number;
@@ -69,6 +89,8 @@ export interface Order {
   driverPhone?: string;
   vehicleNumber?: string;
   status: OrderStatus;
+  driverEtaText?: string; // e.g. "1 hr 45 mins (ETA 04:30 PM)"
+  liveDriverLocation?: { lat: number; lng: number; speedKm: number };
   createdAt: string;
   deliveryDate: string;
   customerRating?: number;
@@ -79,11 +101,11 @@ export interface Order {
 
 export interface ReturnLoad {
   id: string;
-  pickupLocation: string; // Wayanad
-  destinationLocation: string; // Kannur
-  material: string; // e.g. "Crushed Granite Aggregates"
-  quantity: string; // e.g. "12 Tons"
-  earnings: number; // ₹ INR
+  pickupLocation: string;
+  destinationLocation: string;
+  material: string;
+  quantity: string;
+  earnings: number;
   distanceKm: number;
   status: 'AVAILABLE' | 'ACCEPTED';
 }
